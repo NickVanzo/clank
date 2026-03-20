@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { execSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -17,10 +17,14 @@ function tmpProject() {
 }
 
 function run(projectRoot, ...args) {
-  return execSync(`node "${TOOL}" ${args.join(' ')}`, {
+  const result = spawnSync('node', [TOOL, ...args], {
     encoding: 'utf8',
     env: { ...process.env, CLANK_PROJECT_ROOT: projectRoot },
-  }).trim();
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || (result.error && result.error.message) || 'command failed');
+  }
+  return result.stdout.trim();
 }
 
 function runJSON(projectRoot, ...args) {
