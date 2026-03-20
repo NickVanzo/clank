@@ -1,0 +1,8 @@
+{
+  "name": "clank",
+  "description": "Test suite lifecycle management: audit, bootstrap, refactor, and watch for drift",
+  "version": "0.1.0",
+  "author": { "name": "Nick" },
+  "license": "MIT",
+  "keywords": ["testing", "tdd", "test-suite", "coverage", "quality"]
+}
