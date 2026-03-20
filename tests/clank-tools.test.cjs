@@ -243,3 +243,37 @@ describe('detect-stack', () => {
     fs.rmSync(dir, { recursive: true });
   });
 });
+
+describe('codegraph-present', () => {
+  test('returns false when .codegraph/ absent', () => {
+    const dir = tmpProject();
+    assert.equal(run(dir, 'codegraph-present'), 'false');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns true when .codegraph/ exists', () => {
+    const dir = tmpProject();
+    fs.mkdirSync(path.join(dir, '.codegraph'));
+    assert.equal(run(dir, 'codegraph-present'), 'true');
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('codegraph-fresh', () => {
+  test('returns fresh:false when .codegraph/ absent', () => {
+    const dir = tmpProject();
+    const r = runJSON(dir, 'codegraph-fresh');
+    assert.equal(r.fresh, false);
+    assert.equal(r.last_built, null);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns last_built timestamp when .codegraph/ exists', () => {
+    const dir = tmpProject();
+    fs.mkdirSync(path.join(dir, '.codegraph'));
+    const r = runJSON(dir, 'codegraph-fresh');
+    assert.ok(r.last_built);
+    assert.ok(typeof r.commits_since === 'number');
+    fs.rmSync(dir, { recursive: true });
+  });
+});

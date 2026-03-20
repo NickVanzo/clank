@@ -3,6 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { execSync } = require('node:child_process');
 const yaml = require('js-yaml');
 
 const PROJECT_ROOT = process.env.CLANK_PROJECT_ROOT || process.cwd();
@@ -11,7 +12,14 @@ const REPORTS_DIR = path.join(PROJECT_ROOT, 'clank_reports');
 
 const [,, command, ...args] = process.argv;
 
-const commands = { 'report-id': cmdReportId, 'validate': cmdValidate, 'recent': cmdRecent, 'detect-stack': cmdDetectStack };
+const commands = {
+  'report-id': cmdReportId,
+  'validate': cmdValidate,
+  'recent': cmdRecent,
+  'detect-stack': cmdDetectStack,
+  'codegraph-present': cmdCodegraphPresent,
+  'codegraph-fresh': cmdCodegraphFresh,
+};
 
 if (!command || !commands[command]) {
   process.stderr.write(`Unknown command: ${command}\nAvailable: ${Object.keys(commands).join(', ')}\n`);
@@ -110,6 +118,35 @@ function cmdDetectStack(targetPath) {
     dir = parent;
   }
   process.stdout.write(JSON.stringify({ language: 'unknown', framework: null, test_runner: null, manifest_path: null }) + '\n');
+}
+
+function cmdCodegraphPresent() {
+  process.stdout.write(String(fs.existsSync(path.join(PROJECT_ROOT, '.codegraph'))) + '\n');
+}
+
+function cmdCodegraphFresh() {
+  const cgDir = path.join(PROJECT_ROOT, '.codegraph');
+  if (!fs.existsSync(cgDir)) {
+    process.stdout.write(JSON.stringify({ fresh: false, last_built: null, commits_since: 0 }) + '\n');
+    return;
+  }
+  const lastBuilt = fs.statSync(cgDir).mtime.toISOString();
+  let commitsSince = 0;
+  try {
+    const out = execSync(
+      `git -C "${PROJECT_ROOT}" log --since="${lastBuilt}" --oneline 2>/dev/null`,
+      { encoding: 'utf8' }
+    );
+    commitsSince = out.trim().split('\n').filter(Boolean).length;
+  } catch (e) {
+    process.stdout.write(
+      JSON.stringify({ fresh: false, last_built: lastBuilt, commits_since: -1, error: 'git unavailable' }) + '\n'
+    );
+    return;
+  }
+  process.stdout.write(
+    JSON.stringify({ fresh: commitsSince < 10, last_built: lastBuilt, commits_since: commitsSince }) + '\n'
+  );
 }
 
 function cmdReportId(mode) {
