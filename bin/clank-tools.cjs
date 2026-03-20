@@ -153,31 +153,50 @@ function cmdCodegraphFresh() {
 }
 
 function cmdScratchInit(runId) {
-  if (!runId) { process.stderr.write('Usage: clank-tools scratch-init <run-id>\n'); process.exit(1); }
+  if (!runId) {
+    process.stderr.write('Usage: clank-tools scratch-init <run-id>\n');
+    process.exit(1);
+  }
   const p = path.join(CLANK_DIR, 'scratch', runId);
   fs.mkdirSync(p, { recursive: true });
   process.stdout.write(p + '\n');
 }
 
 function cmdScratchMerge(runId) {
-  if (!runId) { process.stderr.write('Usage: clank-tools scratch-merge <run-id>\n'); process.exit(1); }
+  if (!runId) {
+    process.stderr.write('Usage: clank-tools scratch-merge <run-id>\n');
+    process.exit(1);
+  }
   const scratchPath = path.join(CLANK_DIR, 'scratch', runId);
-  if (!fs.existsSync(scratchPath)) { process.stdout.write(JSON.stringify({ findings: [], errors: [] }) + '\n'); return; }
+  if (!fs.existsSync(scratchPath)) {
+    process.stdout.write(JSON.stringify({ findings: [], errors: [] }) + '\n');
+    return;
+  }
   const findings = [], errors = [];
   for (const file of fs.readdirSync(scratchPath).filter(f => f.endsWith('.json'))) {
     try {
       const d = JSON.parse(fs.readFileSync(path.join(scratchPath, file), 'utf8'));
-      if (d.status === 'complete' && Array.isArray(d.findings)) findings.push(...d.findings);
-      else if (d.status === 'error') errors.push({ agent_index: d.agent_index, error: d.error });
-    } catch (e) { errors.push({ file, error: e.message }); }
+      if (d.status === 'complete' && Array.isArray(d.findings)) {
+        findings.push(...d.findings);
+      } else if (d.status === 'error') {
+        errors.push({ agent_index: d.agent_index, error: d.error });
+      }
+    } catch (e) {
+      errors.push({ file, error: e.message });
+    }
   }
   process.stdout.write(JSON.stringify({ findings, errors }) + '\n');
 }
 
 function cmdScratchClean(runId) {
-  if (!runId) { process.stderr.write('Usage: clank-tools scratch-clean <run-id>\n'); process.exit(1); }
+  if (!runId) {
+    process.stderr.write('Usage: clank-tools scratch-clean <run-id>\n');
+    process.exit(1);
+  }
   const p = path.join(CLANK_DIR, 'scratch', runId);
-  if (fs.existsSync(p)) fs.rmSync(p, { recursive: true });
+  if (fs.existsSync(p)) {
+    fs.rmSync(p, { recursive: true });
+  }
 }
 
 function cmdReportId(mode) {
