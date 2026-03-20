@@ -277,3 +277,60 @@ describe('codegraph-fresh', () => {
     fs.rmSync(dir, { recursive: true });
   });
 });
+
+describe('scratch management', () => {
+  test('scratch-init creates directory and returns path', () => {
+    const dir = tmpProject();
+    const result = run(dir, 'scratch-init', 'run-001');
+    assert.ok(fs.existsSync(result));
+    assert.ok(result.includes('run-001'));
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('scratch-merge merges findings from multiple complete agents', () => {
+    const dir = tmpProject();
+    const scratchDir = run(dir, 'scratch-init', 'run-merge');
+    fs.writeFileSync(path.join(scratchDir, '0.json'),
+      JSON.stringify({ agent_index: 0, status: 'complete', findings: [{ type: 'gap', file: 'a.ts' }], error: null }));
+    fs.writeFileSync(path.join(scratchDir, '1.json'),
+      JSON.stringify({ agent_index: 1, status: 'complete', findings: [{ type: 'gap', file: 'b.ts' }], error: null }));
+    const r = runJSON(dir, 'scratch-merge', 'run-merge');
+    assert.equal(r.findings.length, 2);
+    assert.equal(r.errors.length, 0);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('scratch-merge captures errors from failed agents', () => {
+    const dir = tmpProject();
+    const scratchDir = run(dir, 'scratch-init', 'run-err');
+    fs.writeFileSync(path.join(scratchDir, '0.json'),
+      JSON.stringify({ agent_index: 0, status: 'error', findings: [], error: 'CodeGraph unavailable' }));
+    const r = runJSON(dir, 'scratch-merge', 'run-err');
+    assert.equal(r.errors.length, 1);
+    assert.equal(r.errors[0].error, 'CodeGraph unavailable');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('scratch-merge returns empty for non-existent run', () => {
+    const dir = tmpProject();
+    const r = runJSON(dir, 'scratch-merge', 'no-such-run');
+    assert.deepEqual(r, { findings: [], errors: [] });
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('scratch-clean removes directory', () => {
+    const dir = tmpProject();
+    const scratchDir = run(dir, 'scratch-init', 'run-clean');
+    assert.ok(fs.existsSync(scratchDir));
+    run(dir, 'scratch-clean', 'run-clean');
+    assert.ok(!fs.existsSync(scratchDir));
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('scratch-clean is idempotent', () => {
+    const dir = tmpProject();
+    run(dir, 'scratch-clean', 'non-existent');
+    // No error thrown
+    fs.rmSync(dir, { recursive: true });
+  });
+});
