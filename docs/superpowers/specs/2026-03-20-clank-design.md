@@ -126,7 +126,7 @@ Structural improvements to an existing suite. The agent asks what to refactor an
 
 Drift detection between production code and the test suite. Runs on-demand or via session-start hook:
 
-1. Loads the most recent audit report as baseline
+1. Checks for a prior audit report to use as baseline. If none exists, runs a lightweight inline audit (scope: full project, no subagents) to establish one before proceeding.
 2. Detects: new production files with no tests, changed functions whose tests haven't been updated, deleted tests with no explanation
 3. Writes `clank_reports/watch-{ID}.md` with a prioritized action list
 4. Does not make changes — surfaces what needs attention
@@ -334,5 +334,8 @@ Tracked per-project:
 ## Open Questions (deferred to implementation)
 
 - Should `watch` mode run automatically on `git commit` via a hook, or only on-demand?
-- Should bootstrap tests be committed immediately or held in a staging area for review?
 - Report retention policy — does Clank ever prune old reports, or is that left to the user?
+
+## Installation Notes
+
+The installer copies `clank/` references and workflows to `~/.claude/clank/` as a single global installation shared across all projects. This means all projects on the same machine use the same version of Clank. Version mismatches between projects are not a v1 concern — the plugin is updated globally via `claude update clank`. Per-project pinning is deferred to a future version.
