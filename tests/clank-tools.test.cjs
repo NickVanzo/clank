@@ -158,3 +158,88 @@ describe('recent', () => {
     fs.rmSync(dir, { recursive: true });
   });
 });
+
+describe('detect-stack', () => {
+  test('detects typescript/vitest', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { vitest: '1.0.0', typescript: '5.0.0' } }));
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'typescript');
+    assert.equal(r.test_runner, 'vitest');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('detects javascript/jest', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { jest: '29.0.0' } }));
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'javascript');
+    assert.equal(r.test_runner, 'jest');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('detects python/pytest from pyproject.toml', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[build-system]\n');
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'python');
+    assert.equal(r.test_runner, 'pytest');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('detects rust/cargo-test', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[package]\nname = "foo"\n');
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'rust');
+    assert.equal(r.test_runner, 'cargo-test');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('detects go/go-test', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/foo\n');
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'go');
+    assert.equal(r.test_runner, 'go-test');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns unknown for project with no manifest', () => {
+    const dir = tmpProject();
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'unknown');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns null test_runner for package.json with no known runner', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { typescript: '5.0.0' } }));
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.equal(r.language, 'typescript');
+    assert.equal(r.test_runner, null);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('walks up from nested path to find manifest', () => {
+    const dir = tmpProject();
+    fs.mkdirSync(path.join(dir, 'src', 'utils'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { jest: '29.0.0' } }));
+    const r = runJSON(dir, 'detect-stack', path.join(dir, 'src', 'utils'));
+    assert.equal(r.test_runner, 'jest');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns manifest_path', () => {
+    const dir = tmpProject();
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: {} }));
+    const r = runJSON(dir, 'detect-stack', dir);
+    assert.ok(r.manifest_path);
+    assert.ok(r.manifest_path.endsWith('package.json'));
+    fs.rmSync(dir, { recursive: true });
+  });
+});

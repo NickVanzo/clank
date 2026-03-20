@@ -11,7 +11,7 @@ const REPORTS_DIR = path.join(PROJECT_ROOT, 'clank_reports');
 
 const [,, command, ...args] = process.argv;
 
-const commands = { 'report-id': cmdReportId, 'validate': cmdValidate, 'recent': cmdRecent };
+const commands = { 'report-id': cmdReportId, 'validate': cmdValidate, 'recent': cmdRecent, 'detect-stack': cmdDetectStack };
 
 if (!command || !commands[command]) {
   process.stderr.write(`Unknown command: ${command}\nAvailable: ${Object.keys(commands).join(', ')}\n`);
@@ -72,6 +72,44 @@ function cmdRecent(nStr) {
   }
   reports.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   process.stdout.write(JSON.stringify(reports.slice(0, n)) + '\n');
+}
+
+function detectInDir(dir) {
+  const pkg = path.join(dir, 'package.json');
+  if (fs.existsSync(pkg)) {
+    const p = JSON.parse(fs.readFileSync(pkg, 'utf8'));
+    const deps = { ...p.dependencies, ...p.devDependencies };
+    const runner = deps.vitest ? 'vitest' : deps.jest ? 'jest' : deps.mocha ? 'mocha' : deps.jasmine ? 'jasmine' : null;
+    const lang = (deps.typescript || p.devDependencies?.typescript) ? 'typescript' : 'javascript';
+    return { language: lang, framework: 'node', test_runner: runner, manifest_path: pkg };
+  }
+  const pyproj = path.join(dir, 'pyproject.toml');
+  const reqtxt = path.join(dir, 'requirements.txt');
+  if (fs.existsSync(pyproj) || fs.existsSync(reqtxt)) {
+    return { language: 'python', framework: null, test_runner: 'pytest',
+      manifest_path: fs.existsSync(pyproj) ? pyproj : reqtxt };
+  }
+  const cargo = path.join(dir, 'Cargo.toml');
+  if (fs.existsSync(cargo)) return { language: 'rust', framework: null, test_runner: 'cargo-test', manifest_path: cargo };
+  const gomod = path.join(dir, 'go.mod');
+  if (fs.existsSync(gomod)) return { language: 'go', framework: null, test_runner: 'go-test', manifest_path: gomod };
+  const mixexs = path.join(dir, 'mix.exs');
+  if (fs.existsSync(mixexs)) return { language: 'elixir', framework: null, test_runner: 'exunit', manifest_path: mixexs };
+  return null;
+}
+
+function cmdDetectStack(targetPath) {
+  targetPath = targetPath || PROJECT_ROOT;
+  const abs = path.isAbsolute(targetPath) ? targetPath : path.join(PROJECT_ROOT, targetPath);
+  let dir = fs.existsSync(abs) && fs.statSync(abs).isDirectory() ? abs : path.dirname(abs);
+  while (true) {
+    const result = detectInDir(dir);
+    if (result) { process.stdout.write(JSON.stringify(result) + '\n'); return; }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  process.stdout.write(JSON.stringify({ language: 'unknown', framework: null, test_runner: null, manifest_path: null }) + '\n');
 }
 
 function cmdReportId(mode) {
