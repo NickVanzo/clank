@@ -24,6 +24,7 @@ const commands = {
   'scratch-clean': cmdScratchClean,
   'config-get': cmdConfigGet,
   'config-set': cmdConfigSet,
+  'help': cmdHelp,
 };
 
 if (!command || !commands[command]) {
@@ -253,4 +254,23 @@ function cmdReportId(mode) {
     }
   }
   process.stdout.write(`${prefix}-${String(counter).padStart(3, '0')}\n`);
+}
+
+function cmdHelp() {
+  process.stdout.write(`clank-tools — Clank plugin utility
+
+Commands:
+  report-id <mode>             Generate report ID
+  recent <n>                   List n most recent reports (JSON)
+  detect-stack <path>          Detect language/runner for path (JSON)
+  codegraph-present            Check .codegraph/ exists (boolean)
+  codegraph-fresh              Check codegraph freshness (JSON)
+  scratch-init <run-id>        Create scratch directory
+  scratch-merge <run-id>       Merge scratch agent results (JSON)
+  scratch-clean <run-id>       Delete scratch directory
+  validate <report-path>       Validate report frontmatter (JSON)
+  config-get <key>             Read .clank/config.json key
+  config-set <key> <value>     Write .clank/config.json key
+  help                         Show this help
+`);
 }
