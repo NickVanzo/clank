@@ -40,6 +40,10 @@ function cmdValidate(reportPath) {
   }
   const { ok, error, data } = parseFrontmatter(abs);
   if (!ok) { process.stdout.write(JSON.stringify({ valid: false, error }) + '\n'); return; }
+  if (!data || typeof data !== 'object') {
+    process.stdout.write(JSON.stringify({ valid: false, error: 'Empty or invalid frontmatter' }) + '\n');
+    return;
+  }
   const required = ['id', 'mode', 'status', 'created_at'];
   const missing = required.filter(k => !data[k]);
   if (missing.length) {
