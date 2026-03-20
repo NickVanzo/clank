@@ -334,3 +334,42 @@ describe('scratch management', () => {
     fs.rmSync(dir, { recursive: true });
   });
 });
+
+describe('config management', () => {
+  test('config-get returns null string for missing key', () => {
+    const dir = tmpProject();
+    assert.equal(run(dir, 'config-get', 'missing_key'), 'null');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('config-get returns null string when config.json absent', () => {
+    const dir = tmpProject();
+    fs.rmSync(path.join(dir, '.clank'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.clank'));
+    assert.equal(run(dir, 'config-get', 'anything'), 'null');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('config-set and config-get roundtrip boolean', () => {
+    const dir = tmpProject();
+    run(dir, 'config-set', 'codegraph_suggestion_shown', 'true');
+    assert.equal(run(dir, 'config-get', 'codegraph_suggestion_shown'), 'true');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('config-set and config-get roundtrip string', () => {
+    const dir = tmpProject();
+    run(dir, 'config-set', 'last_audit', '"audit-20260320-001"');
+    assert.equal(run(dir, 'config-get', 'last_audit'), '"audit-20260320-001"');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('config-set preserves existing keys', () => {
+    const dir = tmpProject();
+    run(dir, 'config-set', 'key_a', '"a"');
+    run(dir, 'config-set', 'key_b', '"b"');
+    assert.equal(run(dir, 'config-get', 'key_a'), '"a"');
+    assert.equal(run(dir, 'config-get', 'key_b'), '"b"');
+    fs.rmSync(dir, { recursive: true });
+  });
+});

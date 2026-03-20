@@ -22,6 +22,8 @@ const commands = {
   'scratch-init': cmdScratchInit,
   'scratch-merge': cmdScratchMerge,
   'scratch-clean': cmdScratchClean,
+  'config-get': cmdConfigGet,
+  'config-set': cmdConfigSet,
 };
 
 if (!command || !commands[command]) {
@@ -197,6 +199,39 @@ function cmdScratchClean(runId) {
   if (fs.existsSync(p)) {
     fs.rmSync(p, { recursive: true });
   }
+}
+
+function readConfig() {
+  const p = path.join(CLANK_DIR, 'config.json');
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+}
+
+function writeConfig(cfg) {
+  fs.mkdirSync(CLANK_DIR, { recursive: true });
+  fs.writeFileSync(path.join(CLANK_DIR, 'config.json'), JSON.stringify(cfg, null, 2));
+}
+
+function cmdConfigGet(key) {
+  if (!key) {
+    process.stderr.write('Usage: clank-tools config-get <key>\n');
+    process.exit(1);
+  }
+  const cfg = readConfig();
+  process.stdout.write(JSON.stringify(cfg[key] ?? null) + '\n');
+}
+
+function cmdConfigSet(key, value) {
+  if (!key || value === undefined) {
+    process.stderr.write('Usage: clank-tools config-set <key> <value>\n');
+    process.exit(1);
+  }
+  const cfg = readConfig();
+  try {
+    cfg[key] = JSON.parse(value);
+  } catch {
+    cfg[key] = value;
+  }
+  writeConfig(cfg);
 }
 
 function cmdReportId(mode) {
