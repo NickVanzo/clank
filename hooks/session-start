@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+
+CLANK_TOOLS="$HOME/.claude/clank/bin/clank-tools.cjs"
+
+# Only run if clank-tools exists and we're in a project
+if [[ ! -f "$CLANK_TOOLS" ]]; then exit 0; fi
+if [[ ! -d ".clank" ]] && [[ ! -d "clank_reports" ]]; then exit 0; fi
+
+# Load recent reports summary
+RECENT=$(node "$CLANK_TOOLS" recent 3 2>/dev/null || echo "[]")
+if [[ "$RECENT" != "[]" ]]; then
+  echo "## Clank: Recent Reports"
+  echo "$RECENT" | node -e "
+    const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+    d.forEach(r => console.log(\`- [\${r.mode}] \${r.id} — \${r.status} — \${r.created_at.slice(0,10)}\`));
+  " 2>/dev/null || true
+  echo ""
+fi
+
+# CodeGraph suggestion (shown once)
+CG_SHOWN=$(node "$CLANK_TOOLS" config-get codegraph_suggestion_shown 2>/dev/null || echo "null")
+CG_PRESENT=$(node "$CLANK_TOOLS" codegraph-present 2>/dev/null || echo "false")
+
+if [[ "$CG_SHOWN" != "true" ]] && [[ "$CG_PRESENT" == "false" ]]; then
+  echo "## Clank: CodeGraph Not Initialized"
+  echo "Running \`codegraph init -i\` would let Clank navigate your codebase more accurately"
+  echo "and use significantly fewer tokens. Consider running it before your first /clank:audit."
+  node "$CLANK_TOOLS" config-set codegraph_suggestion_shown true 2>/dev/null || true
+fi
