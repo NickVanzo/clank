@@ -45,6 +45,10 @@ export interface Finding {
 interface NodeRow { id: string; kind: string; data: string; created_at: number }
 interface EdgeRow { source: string; target: string; kind: string }
 
+/**
+ * Open (or create) memory.db for the given project root.
+ * Returns a DatabaseSync instance. Caller is responsible for calling .close().
+ */
 export function initDb(projectRoot: string): DatabaseSync {
   const clankDir = path.join(projectRoot, '.clank');
   fs.mkdirSync(clankDir, { recursive: true });
@@ -54,6 +58,9 @@ export function initDb(projectRoot: string): DatabaseSync {
   return db;
 }
 
+/**
+ * Write a completed run + findings into the graph as a single atomic transaction.
+ */
 export function recordRun(
   db: DatabaseSync,
   { run, findings, resolved_finding_ids }: {
@@ -127,6 +134,9 @@ export interface SummaryResult {
   open_findings: { total: number; blocking: number; by_scope: Record<string, number> };
 }
 
+/**
+ * Compact overview: 5 most recent runs + open finding counts.
+ */
 export function querySummary(db: DatabaseSync, n = 5): SummaryResult {
   const runRows = db.prepare(
     "SELECT id, data, created_at FROM nodes WHERE kind = 'run' ORDER BY created_at DESC LIMIT ?"
@@ -173,6 +183,10 @@ export interface ScopeResult {
   }>;
 }
 
+/**
+ * Finding history for a specific path.
+ * Covered_by: runs whose scope_paths cover this path (prefix or exact match).
+ */
 export function queryScope(db: DatabaseSync, scopePath: string): ScopeResult {
   const allRunEdges = db.prepare(
     "SELECT source, target FROM edges WHERE kind = 'covers'"
@@ -237,6 +251,10 @@ export interface BaselineResult {
   report_path: string;
 }
 
+/**
+ * Most recent complete audit whose scope_paths cover all requested paths.
+ * A run covers path P if any of its scope nodes' paths are P or an ancestor of P.
+ */
 export function queryBaseline(db: DatabaseSync, scopePaths: string[]): BaselineResult | null {
   const auditRows = db.prepare(
     "SELECT id, data, created_at FROM nodes WHERE kind = 'run' AND json_extract(data, '$.mode') = 'audit' AND json_extract(data, '$.status') = 'complete' ORDER BY created_at DESC"
@@ -273,6 +291,9 @@ export interface RunResult {
   scopes_covered: string[];
 }
 
+/**
+ * Full run detail: run node + all findings + scopes covered.
+ */
 export function queryRun(db: DatabaseSync, runId: string): RunResult | null {
   const runRow = db.prepare(
     "SELECT data FROM nodes WHERE id = ? AND kind = 'run'"
