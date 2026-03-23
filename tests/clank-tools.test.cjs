@@ -373,3 +373,41 @@ describe('config management', () => {
     fs.rmSync(dir, { recursive: true });
   });
 });
+
+describe('memory-summary', () => {
+  test('returns empty state when memory.db does not exist (falls back to .md scan)', () => {
+    const dir = tmpProject();
+    const result = runJSON(dir, 'memory-summary');
+    assert.ok(Array.isArray(result.recent_runs));
+    assert.equal(result.open_findings.total, 0);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns summary from memory.db when it exists', () => {
+    const dir = tmpProject();
+    // Seed the DB directly using the db module
+    const { initDb, recordRun } = require('../src/db.cjs');
+    const db = initDb(dir);
+    recordRun(db, {
+      run: {
+        id: 'audit-20260320-100000-001',
+        mode: 'audit',
+        status: 'complete',
+        scope_type: 'directory',
+        scope_paths: ['src/'],
+        stack: 'typescript/vitest',
+        metrics: { files: 5, covered_functions: 10, total_functions: 12 },
+        report_path: 'clank_reports/audit-20260320-100000-001.md',
+        based_on: null,
+      },
+      findings: [],
+      resolved_finding_ids: [],
+    });
+    db.close();
+
+    const result = runJSON(dir, 'memory-summary');
+    assert.equal(result.recent_runs.length, 1);
+    assert.equal(result.recent_runs[0].id, 'audit-20260320-100000-001');
+    fs.rmSync(dir, { recursive: true });
+  });
+});

@@ -87,7 +87,18 @@ node ~/.claude/clank/bin/clank-tools.cjs config-set last_refactor '"'$RUN_ID'"'
 node ~/.claude/clank/bin/clank-tools.cjs scratch-clean $RUN_ID
 ```
 
-## Step 9 — Present results
+## Step 9 — Record in memory graph
+
+Before presenting results, call `mcp__clank__clank_memory_scope` for each file in `scope_paths` to retrieve all `open` finding IDs for those files. Compare the finding descriptions against what the refactor actually changed. Finding IDs whose described issue is no longer present are resolved.
+
+Call `mcp__clank__clank_memory_record` with:
+- `mode: "refactor"`
+- `findings: []` (refactor does not produce new findings)
+- `resolved_finding_ids`: array of finding IDs that are no longer present
+
+If the call fails, append a warning to the report and continue.
+
+## Step 10 — Present results
 
 Show the user:
 
