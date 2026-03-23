@@ -1,21 +1,20 @@
 #!/usr/bin/env node
-'use strict';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 
 if (args[0] === 'serve' && args[1] === '--mcp') {
-  runMcpServer();
+  await runMcpServer();
 } else {
   runInstaller();
 }
 
-// ── MCP Server ────────────────────────────────────────────────────────────────
-
-function runMcpServer() {
-  const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
-  const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
-  const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
-  const { initDb, recordRun, querySummary, queryScope, queryBaseline, queryRun } = require('../src/db.cjs');
+async function runMcpServer(): Promise<void> {
+  const { Server } = await import('@modelcontextprotocol/sdk/server/index.js');
+  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+  const { ListToolsRequestSchema, CallToolRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
+  const { initDb, recordRun, querySummary, queryScope, queryBaseline, queryRun } = await import('./db.js');
 
   const server = new Server(
     { name: 'clank', version: '0.2.0' },
@@ -88,25 +87,30 @@ function runMcpServer() {
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const projectRoot = args.projectPath || process.cwd();
+    const { name, arguments: toolArgs } = request.params;
+    const args = toolArgs as Record<string, unknown>;
+    const projectRoot = typeof args['projectPath'] === 'string' ? args['projectPath'] : process.cwd();
 
     let db;
     try {
       db = initDb(projectRoot);
+      let result: unknown;
 
-      let result;
       if (name === 'clank_memory_record') {
-        recordRun(db, { run: args.run, findings: args.findings, resolved_finding_ids: args.resolved_finding_ids });
+        recordRun(db, {
+          run: args['run'] as Parameters<typeof recordRun>[1]['run'],
+          findings: args['findings'] as Parameters<typeof recordRun>[1]['findings'],
+          resolved_finding_ids: args['resolved_finding_ids'] as string[],
+        });
         result = { ok: true };
       } else if (name === 'clank_memory_summary') {
         result = querySummary(db);
       } else if (name === 'clank_memory_scope') {
-        result = queryScope(db, args.path);
+        result = queryScope(db, args['path'] as string);
       } else if (name === 'clank_memory_baseline') {
-        result = queryBaseline(db, args.scope_paths);
+        result = queryBaseline(db, args['scope_paths'] as string[]);
       } else if (name === 'clank_memory_run') {
-        result = queryRun(db, args.run_id);
+        result = queryRun(db, args['run_id'] as string);
       } else {
         throw new Error(`Unknown tool: ${name}`);
       }
@@ -114,7 +118,7 @@ function runMcpServer() {
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     } catch (err) {
       return {
-        content: [{ type: 'text', text: JSON.stringify({ error: err.message }) }],
+        content: [{ type: 'text', text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }],
         isError: true,
       };
     } finally {
@@ -122,24 +126,11 @@ function runMcpServer() {
     }
   });
 
-  async function main() {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-  }
-
-  main().catch(err => {
-    process.stderr.write(`MCP server error: ${err.message}\n`);
-    process.exit(1);
-  });
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }
 
-// ── Installer ─────────────────────────────────────────────────────────────────
-
-function runInstaller() {
-  // Installer implementation is in Task 6.
-  // Delegate to install.js via execSync so its main() runs in a child process,
-  // not as a side-effect of require() in this process.
-  const { execSync } = require('node:child_process');
-  const installScript = require('node:path').join(__dirname, 'install.js');
+function runInstaller(): void {
+  const installScript = fileURLToPath(new URL('./install.js', import.meta.url));
   execSync(`node "${installScript}"`, { stdio: 'inherit' });
 }
