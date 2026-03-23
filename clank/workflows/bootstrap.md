@@ -95,7 +95,13 @@ When all subagents complete:
 4. Run `clank-tools config-set last_bootstrap ${RUN_ID}`.
 5. Delete the scratch directory.
 
-## Step 8 — Present results
+## Step 8 — Record in memory graph
+
+After writing the final report, call `mcp__clank__clank_memory_record` with the same structure as the audit workflow. Set `mode: "bootstrap"`, `resolved_finding_ids: []`. Include one finding per file where tests were added, with `kind: "bootstrap_coverage"` and `status` implied open until an audit confirms coverage.
+
+If the call fails, append a warning to the report and continue.
+
+## Step 9 — Present results
 
 Summarize to the user:
 

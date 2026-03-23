@@ -76,7 +76,43 @@ node ~/.claude/clank/bin/clank-tools.cjs scratch-clean $RUN_ID
 node ~/.claude/clank/bin/clank-tools.cjs config-set last_audit '"'$RUN_ID'"'
 ```
 
-## Step 8 — Present report
+## Step 8 — Record in memory graph
+
+Call `mcp__clank__clank_memory_record` with:
+
+```json
+{
+  "run": {
+    "id": "<RUN_ID>",
+    "mode": "audit",
+    "status": "<complete or partial>",
+    "scope_type": "<type from scope object>",
+    "scope_paths": ["<paths from scope object>"],
+    "stack": "<stack string from detect-stack>",
+    "metrics": {
+      "files": "<files analyzed>",
+      "covered_functions": "<functions with tests>",
+      "total_functions": "<total functions found>"
+    },
+    "report_path": "clank_reports/<RUN_ID>.md",
+    "based_on": null
+  },
+  "findings": [
+    {
+      "id": "f-<RUN_ID>-<index>",
+      "scope_path": "<file path>",
+      "severity": "blocking|advisory",
+      "kind": "<anti_pattern|missing_test|drift|...>",
+      "text": "<finding description>"
+    }
+  ],
+  "resolved_finding_ids": []
+}
+```
+
+If the call fails, append a warning to the report body: `> Warning: memory graph update failed — run not indexed.` Do not abort the session.
+
+## Step 9 — Present report
 
 Summarize the key findings to the user (blocking violations, advisory count, top
 coverage gaps). Give the path to the full report.
