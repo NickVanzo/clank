@@ -47,7 +47,7 @@ clank-tools.ts ← db.ts (dynamic import in cmdMemorySummary)
 - `bin` entries updated (only these two — `install.ts` is not a bin entry):
   - `"clank-tools"` → `"./dist/clank-tools.js"`
   - `"clank"` → `"./dist/clank.js"`
-- devDependencies added: `typescript`, `@types/node`, `@types/better-sqlite3`, `tsx`, `vitest`, `oxlint`
+- devDependencies added: `typescript`, `@types/node`, `tsx`, `vitest`, `oxlint`
 - devDependencies removed: none (project had no devDeps before this migration)
 
 ## tsconfig.json
