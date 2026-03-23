@@ -24,6 +24,7 @@ const commands = {
   'scratch-clean': cmdScratchClean,
   'config-get': cmdConfigGet,
   'config-set': cmdConfigSet,
+  'memory-summary': cmdMemorySummary,
   'help': cmdHelp,
 };
 
@@ -256,6 +257,36 @@ function cmdReportId(mode) {
   process.stdout.write(`${prefix}-${String(counter).padStart(3, '0')}\n`);
 }
 
+function cmdMemorySummary() {
+  const memDbPath = path.join(CLANK_DIR, 'memory.db');
+  if (!fs.existsSync(memDbPath)) {
+    const reports = [];
+    if (fs.existsSync(REPORTS_DIR)) {
+      for (const file of fs.readdirSync(REPORTS_DIR).filter(f => f.endsWith('.md'))) {
+        const { ok, data } = parseFrontmatter(path.join(REPORTS_DIR, file));
+        if (!ok || !data?.id) continue;
+        const m = data.metrics || {};
+        reports.push({ id: data.id, mode: data.mode, status: data.status,
+          created_at: (data.created_at || '').slice(0, 10), metrics: m });
+      }
+    }
+    reports.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    process.stdout.write(JSON.stringify({
+      recent_runs: reports.slice(0, 5),
+      open_findings: { total: 0, blocking: 0, by_scope: {} },
+    }) + '\n');
+    return;
+  }
+  const { DatabaseSync } = require('node:sqlite');
+  const { querySummary } = require(path.join(__dirname, '..', 'src', 'db.cjs'));
+  const db = new DatabaseSync(memDbPath);
+  try {
+    process.stdout.write(JSON.stringify(querySummary(db)) + '\n');
+  } finally {
+    db.close();
+  }
+}
+
 function cmdHelp() {
   process.stdout.write(`clank-tools — Clank plugin utility
 
@@ -271,6 +302,7 @@ Commands:
   validate <report-path>       Validate report frontmatter (JSON)
   config-get <key>             Read .clank/config.json key
   config-set <key> <value>     Write .clank/config.json key
+  memory-summary               Summary from memory graph (or recent .md fallback)
   help                         Show this help
 `);
 }
