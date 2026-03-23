@@ -22,23 +22,21 @@ project if the user provides no input. Resolve the answer to a scope object
 
 ## Step 2 — Baseline check
 
-```bash
-node ~/.claude/clank/bin/clank-tools.cjs recent 5
-```
+Call `mcp__clank__clank_memory_baseline` with `scope_paths` from the resolved scope object.
 
-Examine the returned reports. Find the most recent audit report whose scope
-covers the current watch scope. A report covers the watch scope if its scope
-paths are a superset of the watch scope paths.
+If a baseline is returned: use the returned `run_id` as the baseline. If the agent also needs the full findings list from that run, call `mcp__clank__clank_memory_run` with that `run_id`. Only read the `.md` file at `report_path` if you need the narrative detail not available in the graph.
 
-If no matching report is found, or if the best match has a narrower scope than
-the current watch scope, run a lightweight inline audit first:
+If `null` is returned (no matching audit in the graph): fall back to the existing `.md` scan behaviour — call `clank-tools recent 5`, find the most recent audit whose scope covers the current watch scope.
+
+If no baseline is found by either method, run a lightweight inline audit first:
 
 - Spawn a single `clank-auditor` subagent covering the full project scope
 - No parallelism — one agent only
 - Wait for it to complete and write its report
 
-Use that inline audit report as the baseline. Note `based_on: {inline-audit-id}`
-in the watch report to record that an inline audit was generated automatically.
+Use that inline audit report as the baseline. Note `based_on: {inline-audit-id}` in the watch report.
+
+Also update **Step 5** to call `mcp__clank__clank_memory_record` after writing the report, with `based_on` set to the baseline run ID.
 
 ## Step 3 — Initialize
 
