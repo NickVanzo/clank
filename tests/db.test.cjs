@@ -193,15 +193,18 @@ describe('recordRun', () => {
     fs.rmSync(dir, { recursive: true });
   });
 
-  test('is atomic — partial input does not write any nodes', () => {
+  test('is atomic — failed transaction does not write any nodes', () => {
     const dir = tmpDir();
     const db = initDb(dir);
-    // Pass a finding that references a nonexistent scope path — should still work
-    // (scope is upserted). Test atomicity by passing duplicate run id.
     recordRun(db, { run: MINIMAL_RUN, findings: [], resolved_finding_ids: [] });
+    // Second call with same run.id (duplicate PK) but a new scope_path.
+    // If rollback works, scope:src/new-path/ must NOT be present after the throw.
+    const runWithNewScope = { ...MINIMAL_RUN, scope_paths: ['src/new-path/'] };
     assert.throws(() => {
-      recordRun(db, { run: MINIMAL_RUN, findings: [], resolved_finding_ids: [] });
-    }); // duplicate primary key
+      recordRun(db, { run: runWithNewScope, findings: [], resolved_finding_ids: [] });
+    });
+    const rolledBackScope = db.prepare("SELECT * FROM nodes WHERE id = ?").get('scope:src/new-path/');
+    assert.equal(rolledBackScope, undefined, 'scope node from failed transaction should be rolled back');
     db.close();
     fs.rmSync(dir, { recursive: true });
   });
