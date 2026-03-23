@@ -211,11 +211,12 @@ function queryBaseline(db, scopePaths) {
     "SELECT id, data, created_at FROM nodes WHERE kind = 'run' AND json_extract(data, '$.mode') = 'audit' AND json_extract(data, '$.status') = 'complete' ORDER BY created_at DESC"
   ).all();
 
+  const coversStmt = db.prepare(
+    "SELECT target FROM edges WHERE source = ? AND kind = 'covers'"
+  );
   for (const row of auditRows) {
     const d = JSON.parse(row.data);
-    const coversEdges = db.prepare(
-      "SELECT target FROM edges WHERE source = ? AND kind = 'covers'"
-    ).all(d.id);
+    const coversEdges = coversStmt.all(d.id);
     const coveredPaths = coversEdges.map(e => e.target.replace(/^scope:/, ''));
 
     const coversAll = scopePaths.every(requested =>
