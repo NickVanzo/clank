@@ -209,3 +209,255 @@ describe('recordRun', () => {
     fs.rmSync(dir, { recursive: true });
   });
 });
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const { querySummary, queryScope, queryBaseline, queryRun } = require('../src/db.cjs');
+
+function seedDb(db) {
+  const run1 = {
+    id: 'audit-20260319-100000-001',
+    mode: 'audit',
+    status: 'complete',
+    scope_type: 'directory',
+    scope_paths: ['src/'],
+    stack: 'typescript/vitest',
+    metrics: { files: 10, covered_functions: 20, total_functions: 25 },
+    report_path: 'clank_reports/audit-20260319-100000-001.md',
+    based_on: null,
+  };
+  const finding1 = {
+    id: 'f-audit-20260319-100000-001-0',
+    scope_path: 'src/parser.ts',
+    severity: 'blocking',
+    kind: 'anti_pattern',
+    text: 'Missing null check',
+  };
+  recordRun(db, { run: run1, findings: [finding1], resolved_finding_ids: [] }, 1000);
+
+  const run2 = {
+    id: 'audit-20260320-100000-001',
+    mode: 'audit',
+    status: 'complete',
+    scope_type: 'directory',
+    scope_paths: ['src/'],
+    stack: 'typescript/vitest',
+    metrics: { files: 10, covered_functions: 22, total_functions: 25 },
+    report_path: 'clank_reports/audit-20260320-100000-001.md',
+    based_on: null,
+  };
+  const finding2 = {
+    id: 'f-audit-20260320-100000-001-0',
+    scope_path: 'src/format.ts',
+    severity: 'advisory',
+    kind: 'missing_test',
+    text: 'No tests for formatDate',
+  };
+  recordRun(db, { run: run2, findings: [finding2], resolved_finding_ids: [] }, 2000);
+  return { run1, run2, finding1, finding2 };
+}
+
+// ── querySummary ──────────────────────────────────────────────────────────────
+
+describe('querySummary', () => {
+  test('returns empty state when DB has no runs', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    const result = querySummary(db);
+    assert.deepEqual(result.recent_runs, []);
+    assert.equal(result.open_findings.total, 0);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns 5 most recent runs sorted newest first', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = querySummary(db);
+    assert.equal(result.recent_runs.length, 2);
+    assert.equal(result.recent_runs[0].id, 'audit-20260320-100000-001');
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('computes coverage_pct in recent_runs metrics', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = querySummary(db);
+    const latest = result.recent_runs[0];
+    assert.ok('coverage_pct' in latest.metrics);
+    assert.equal(latest.metrics.coverage_pct, Math.round(22 / 25 * 100));
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('counts open findings total and blocking correctly', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = querySummary(db);
+    assert.equal(result.open_findings.total, 2);
+    assert.equal(result.open_findings.blocking, 1);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('groups open findings by scope in by_scope', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = querySummary(db);
+    assert.ok('src/parser.ts' in result.open_findings.by_scope);
+    assert.equal(result.open_findings.by_scope['src/parser.ts'], 1);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+// ── queryScope ────────────────────────────────────────────────────────────────
+
+describe('queryScope', () => {
+  test('returns null scope and empty arrays for unknown path', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    const result = queryScope(db, 'src/unknown.ts');
+    assert.equal(result.scope, 'src/unknown.ts');
+    assert.deepEqual(result.covered_by, []);
+    assert.deepEqual(result.findings, []);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns runs that covered the path', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    // src/parser.ts is covered by run1 via scope 'src/' (prefix match)
+    const result = queryScope(db, 'src/parser.ts');
+    assert.ok(result.covered_by.length > 0);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns findings that affect the path', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = queryScope(db, 'src/parser.ts');
+    assert.equal(result.findings.length, 1);
+    assert.equal(result.findings[0].text, 'Missing null check');
+    assert.equal(result.findings[0].status, 'open');
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('does not return resolved findings as open', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    const { finding1 } = seedDb(db);
+    const refactorRun = {
+      id: 'refactor-20260321-000000-001',
+      mode: 'refactor',
+      status: 'complete',
+      scope_type: 'directory',
+      scope_paths: ['src/'],
+      stack: 'typescript/vitest',
+      metrics: { files: 10, covered_functions: 22, total_functions: 25 },
+      report_path: 'clank_reports/refactor-20260321-000000-001.md',
+      based_on: null,
+    };
+    recordRun(db, { run: refactorRun, findings: [], resolved_finding_ids: [finding1.id] });
+    const result = queryScope(db, 'src/parser.ts');
+    const openFindings = result.findings.filter(f => f.status === 'open');
+    assert.equal(openFindings.length, 0);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+// ── queryBaseline ─────────────────────────────────────────────────────────────
+
+describe('queryBaseline', () => {
+  test('returns null when no audit runs exist', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    const result = queryBaseline(db, ['src/']);
+    assert.equal(result, null);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns most recent audit covering the requested scope', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = queryBaseline(db, ['src/parser.ts']);
+    // Both runs covered src/ which is an ancestor of src/parser.ts
+    assert.equal(result.run_id, 'audit-20260320-100000-001');
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns null when no audit covers the requested scope', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    // Neither run covered src/other/ or any ancestor
+    const result = queryBaseline(db, ['lib/']);
+    assert.equal(result, null);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('result includes run_id, created_at, metrics, report_path', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = queryBaseline(db, ['src/']);
+    assert.ok(result.run_id);
+    assert.ok(result.created_at);
+    assert.ok(result.metrics);
+    assert.ok(result.report_path);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+// ── queryRun ─────────────────────────────────────────────────────────────────
+
+describe('queryRun', () => {
+  test('returns null for unknown run_id', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    assert.equal(queryRun(db, 'no-such-run'), null);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns run data, findings, and scopes_covered', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    seedDb(db);
+    const result = queryRun(db, 'audit-20260319-100000-001');
+    assert.equal(result.run.id, 'audit-20260319-100000-001');
+    assert.equal(result.run.mode, 'audit');
+    assert.ok(Array.isArray(result.findings));
+    assert.ok(Array.isArray(result.scopes_covered));
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('findings include resolved_by field', () => {
+    const dir = tmpDir();
+    const db = initDb(dir);
+    const { finding1 } = seedDb(db);
+    const result = queryRun(db, 'audit-20260319-100000-001');
+    const f = result.findings.find(x => x.id === finding1.id);
+    assert.ok(f);
+    assert.ok('resolved_by' in f);
+    db.close();
+    fs.rmSync(dir, { recursive: true });
+  });
+});
