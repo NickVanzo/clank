@@ -141,5 +141,5 @@ function runInstaller() {
   // not as a side-effect of require() in this process.
   const { execSync } = require('node:child_process');
   const installScript = require('node:path').join(__dirname, 'install.js');
-  execSync(`node ${installScript}`, { stdio: 'inherit' });
+  execSync(`node "${installScript}"`, { stdio: 'inherit' });
 }
