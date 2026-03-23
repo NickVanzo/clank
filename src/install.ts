@@ -162,7 +162,7 @@ async function main(): Promise<void> {
   console.log('✓ agents/');
   copyDir(path.join(PLUGIN_ROOT, 'clank'), path.join(path.join(HOME, '.claude'), 'clank'));
   console.log('✓ ~/.claude/clank/');
-  copyDir(path.join(PLUGIN_ROOT, 'dist'), path.join(path.join(HOME, '.claude'), 'clank', 'dist'));
+  copyDir(path.join(PLUGIN_ROOT, 'dist'), path.join(path.join(HOME, '.claude'), 'clank', 'dist')); // compiled output (was bin/ pre-TypeScript)
   console.log('✓ ~/.claude/clank/dist/');
 
   writeMcpConfig(claudeJsonPath);
