@@ -1,27 +1,23 @@
 #!/usr/bin/env node
-'use strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import * as readline from 'node:readline';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
-const readline = require('node:readline');
-
-const PLUGIN_ROOT = path.join(__dirname, '..');
+const PLUGIN_ROOT = path.join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const HOME = os.homedir();
-const PROJECT_ROOT = process.env.CLANK_INSTALL_PROJECT || process.cwd();
+const PROJECT_ROOT = process.env['CLANK_INSTALL_PROJECT'] ?? process.cwd();
 
-// ── Prompts ───────────────────────────────────────────────────────────────────
-
-async function ask(question) {
+async function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
     rl.question(question, answer => { rl.close(); resolve(answer.trim()); });
   });
 }
 
-// ── File helpers ──────────────────────────────────────────────────────────────
-
-function copyDir(src, dest) {
+function copyDir(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
@@ -31,30 +27,29 @@ function copyDir(src, dest) {
   }
 }
 
-function readJson(p) {
-  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+function readJson(p: string): Record<string, unknown> {
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown> : {};
 }
 
-function writeJson(p, data) {
+function writeJson(p: string, data: unknown): void {
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  const tmp = p + '.tmp.' + process.pid;
+  const tmp = `${p}.tmp.${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
   fs.renameSync(tmp, p);
 }
 
-// ── Config writers ────────────────────────────────────────────────────────────
-
-function writeMcpConfig(claudeJsonPath) {
+function writeMcpConfig(claudeJsonPath: string): void {
   const cfg = readJson(claudeJsonPath);
-  cfg.mcpServers = cfg.mcpServers || {};
-  cfg.mcpServers.clank = { type: 'stdio', command: 'clank', args: ['serve', '--mcp'] };
+  const servers = (cfg['mcpServers'] as Record<string, unknown> | undefined) ?? {};
+  servers['clank'] = { type: 'stdio', command: 'clank', args: ['serve', '--mcp'] };
+  cfg['mcpServers'] = servers;
   writeJson(claudeJsonPath, cfg);
 }
 
-function writePermissions(settingsPath) {
+function writePermissions(settingsPath: string): void {
   const s = readJson(settingsPath);
-  s.permissions = s.permissions || {};
-  s.permissions.allow = s.permissions.allow || [];
+  const perms = (s['permissions'] as Record<string, unknown> | undefined) ?? {};
+  const allow = (perms['allow'] as string[] | undefined) ?? [];
   const tools = [
     'mcp__clank__clank_memory_record',
     'mcp__clank__clank_memory_summary',
@@ -63,23 +58,26 @@ function writePermissions(settingsPath) {
     'mcp__clank__clank_memory_run',
   ];
   for (const t of tools) {
-    if (!s.permissions.allow.includes(t)) s.permissions.allow.push(t);
+    if (!allow.includes(t)) allow.push(t);
   }
+  perms['allow'] = allow;
+  s['permissions'] = perms;
   writeJson(settingsPath, s);
 }
 
-function writeSessionStartHook(settingsPath) {
+function writeSessionStartHook(settingsPath: string): void {
   const s = readJson(settingsPath);
-  s.hooks = s.hooks || {};
-  s.hooks.SessionStart = s.hooks.SessionStart || [];
-  // Remove any previous clank session-start entries
-  s.hooks.SessionStart = s.hooks.SessionStart.filter(
+  const hooks = (s['hooks'] as Record<string, unknown> | undefined) ?? {};
+  let sessionStart = (hooks['SessionStart'] as unknown[] | undefined) ?? [];
+  sessionStart = sessionStart.filter(
     e => !JSON.stringify(e).includes('clank-tools memory-summary')
   );
-  s.hooks.SessionStart.push({
+  sessionStart.push({
     matcher: '.*',
     hooks: [{ type: 'command', command: 'clank-tools memory-summary' }],
   });
+  hooks['SessionStart'] = sessionStart;
+  s['hooks'] = hooks;
   writeJson(settingsPath, s);
 }
 
@@ -101,7 +99,7 @@ When working in a Clank-enabled project (.clank/ exists), use these MCP tools in
 All tools accept an optional \`projectPath\` parameter. Defaults to cwd.
 ${CLAUDE_MD_SECTION_END}`;
 
-function writeClaudeMd(claudeMdPath) {
+function writeClaudeMd(claudeMdPath: string): void {
   fs.mkdirSync(path.dirname(claudeMdPath), { recursive: true });
   if (!fs.existsSync(claudeMdPath)) {
     fs.writeFileSync(claudeMdPath, CLAUDE_MD_CONTENT + '\n');
@@ -118,7 +116,7 @@ function writeClaudeMd(claudeMdPath) {
   fs.writeFileSync(claudeMdPath, content);
 }
 
-function initProjectClankDir(projectRoot) {
+function initProjectClankDir(projectRoot: string): void {
   const clankDir = path.join(projectRoot, '.clank');
   fs.mkdirSync(path.join(clankDir, 'journals'), { recursive: true });
   fs.mkdirSync(path.join(clankDir, 'scratch'), { recursive: true });
@@ -130,7 +128,6 @@ function initProjectClankDir(projectRoot) {
       test_run_command: null,
     }, null, 2));
   }
-  // Add memory.db to .gitignore
   const gitignorePath = path.join(projectRoot, '.gitignore');
   const entry = '.clank/memory.db';
   if (fs.existsSync(gitignorePath)) {
@@ -143,27 +140,21 @@ function initProjectClankDir(projectRoot) {
   }
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
-
-async function main() {
+async function main(): Promise<void> {
   console.log('\nClank installer\n');
 
-  // 1. Global or local?
   const locationAnswer = await ask('Install globally (~/.claude) or locally (./.claude)? [G/l] ');
   const isLocal = locationAnswer.toLowerCase() === 'l';
   const claudeDir = isLocal ? path.join(PROJECT_ROOT, '.claude') : path.join(HOME, '.claude');
-  const claudeJsonPath = isLocal ? path.join(PROJECT_ROOT, '.claude.json') : path.join(HOME, '.claude.json');
+  const claudeJsonPath = isLocal
+    ? path.join(PROJECT_ROOT, '.claude.json')
+    : path.join(HOME, '.claude.json');
   const settingsPath = path.join(claudeDir, 'settings.json');
 
-  // 2. Global npm install so `clank` binary is on PATH for the MCP server
-  //    Use PLUGIN_ROOT (the directory containing this installer) so this works
-  //    both during development (local path) and in production (npx extracts package).
-  const { execSync } = require('node:child_process');
   console.log('Installing clank globally...');
   execSync(`npm install -g "${PLUGIN_ROOT}"`, { stdio: 'inherit' });
   console.log('✓ clank installed globally');
 
-  // 3. Copy plugin files (existing behaviour)
   const CLAUDE_LOCAL = path.join(PROJECT_ROOT, '.claude');
   copyDir(path.join(PLUGIN_ROOT, 'commands', 'clank'), path.join(CLAUDE_LOCAL, 'commands', 'clank'));
   console.log('✓ commands/clank/');
@@ -171,37 +162,32 @@ async function main() {
   console.log('✓ agents/');
   copyDir(path.join(PLUGIN_ROOT, 'clank'), path.join(path.join(HOME, '.claude'), 'clank'));
   console.log('✓ ~/.claude/clank/');
-  copyDir(path.join(PLUGIN_ROOT, 'bin'), path.join(path.join(HOME, '.claude'), 'clank', 'bin'));
-  console.log('✓ ~/.claude/clank/bin/');
+  copyDir(path.join(PLUGIN_ROOT, 'dist'), path.join(path.join(HOME, '.claude'), 'clank', 'dist'));
+  console.log('✓ ~/.claude/clank/dist/');
 
-  // 4. MCP server config
   writeMcpConfig(claudeJsonPath);
   console.log(`✓ MCP server registered in ${isLocal ? './.claude.json' : '~/.claude.json'}`);
 
-  // 5. Auto-allow permissions?
   const allowAnswer = await ask('Auto-allow clank_memory_* MCP tools? [Y/n] ');
   if (allowAnswer.toLowerCase() !== 'n') {
     writePermissions(settingsPath);
     console.log(`✓ Permissions added to ${isLocal ? './.claude/settings.json' : '~/.claude/settings.json'}`);
   }
 
-  // 6. SessionStart hook
   writeSessionStartHook(settingsPath);
-  console.log(`✓ SessionStart hook registered`);
+  console.log('✓ SessionStart hook registered');
 
-  // 7. CLAUDE.md
   const claudeMdPath = path.join(claudeDir, 'CLAUDE.md');
   writeClaudeMd(claudeMdPath);
-  console.log(`✓ CLAUDE.md updated`);
+  console.log('✓ CLAUDE.md updated');
 
-  // 8. Project init
   initProjectClankDir(PROJECT_ROOT);
   console.log('✓ .clank/ initialized in project');
 
   console.log('\nClank installed. Restart Claude Code to load the MCP server. Run /clank:audit to get started.\n');
 }
 
-main().catch(err => {
-  console.error('Installation failed:', err.message);
+main().catch((err: unknown) => {
+  console.error('Installation failed:', err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
