@@ -1,8 +1,6 @@
-'use strict';
-
-const { DatabaseSync } = require('node:sqlite');
-const path = require('node:path');
-const fs = require('node:fs');
+import { DatabaseSync } from 'node:sqlite';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS nodes (
@@ -24,14 +22,30 @@ CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source, kind);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target, kind);
 `;
 
-/**
- * Open (or create) memory.db for the given project root.
- * Returns a DatabaseSync instance. Caller is responsible for calling .close().
- *
- * @param {string} projectRoot - Absolute path to the project root directory.
- * @returns {DatabaseSync}
- */
-function initDb(projectRoot) {
+export interface Run {
+  id: string;
+  mode: string;
+  status: string;
+  scope_type: string;
+  scope_paths: string[];
+  stack: string;
+  metrics: Record<string, number>;
+  report_path: string;
+  based_on: string | null;
+}
+
+export interface Finding {
+  id: string;
+  scope_path: string;
+  severity: string;
+  kind: string;
+  text: string;
+}
+
+interface NodeRow { id: string; kind: string; data: string; created_at: number }
+interface EdgeRow { source: string; target: string; kind: string }
+
+export function initDb(projectRoot: string): DatabaseSync {
   const clankDir = path.join(projectRoot, '.clank');
   fs.mkdirSync(clankDir, { recursive: true });
   const db = new DatabaseSync(path.join(clankDir, 'memory.db'));
@@ -40,14 +54,15 @@ function initDb(projectRoot) {
   return db;
 }
 
-/**
- * Write a completed run + findings into the graph as a single atomic transaction.
- *
- * @param {DatabaseSync} db
- * @param {{ run: object, findings: object[], resolved_finding_ids: string[] }} input
- * @param {number} [_createdAt] - Unix ms timestamp; defaults to Date.now().
- */
-function recordRun(db, { run, findings, resolved_finding_ids }, _createdAt = Date.now()) {
+export function recordRun(
+  db: DatabaseSync,
+  { run, findings, resolved_finding_ids }: {
+    run: Run;
+    findings: Finding[];
+    resolved_finding_ids: string[];
+  },
+  _createdAt: number = Date.now()
+): void {
   const now = _createdAt;
 
   const upsertScope = db.prepare(`
@@ -55,15 +70,15 @@ function recordRun(db, { run, findings, resolved_finding_ids }, _createdAt = Dat
     VALUES (?, 'scope', ?, ?)
     ON CONFLICT(id) DO NOTHING
   `);
-  const insertNode = db.prepare(`
-    INSERT INTO nodes (id, kind, data, created_at) VALUES (?, ?, ?, ?)
-  `);
-  const insertEdge = db.prepare(`
-    INSERT OR IGNORE INTO edges (source, target, kind) VALUES (?, ?, ?)
-  `);
-  const updateFindingStatus = db.prepare(`
-    UPDATE nodes SET data = json_set(data, '$.status', ?) WHERE id = ?
-  `);
+  const insertNode = db.prepare(
+    `INSERT INTO nodes (id, kind, data, created_at) VALUES (?, ?, ?, ?)`
+  );
+  const insertEdge = db.prepare(
+    `INSERT OR IGNORE INTO edges (source, target, kind) VALUES (?, ?, ?)`
+  );
+  const updateFindingStatus = db.prepare(
+    `UPDATE nodes SET data = json_set(data, '$.status', ?) WHERE id = ?`
+  );
 
   db.exec('BEGIN');
   try {
@@ -72,7 +87,6 @@ function recordRun(db, { run, findings, resolved_finding_ids }, _createdAt = Dat
       const isDir = p.endsWith('/');
       upsertScope.run(scopeId, JSON.stringify({ id: scopeId, path: p, type: isDir ? 'directory' : 'file' }), now);
     }
-
     for (const f of findings) {
       const scopeId = `scope:${f.scope_path}`;
       upsertScope.run(scopeId, JSON.stringify({ id: scopeId, path: f.scope_path, type: 'file' }), now);
@@ -83,7 +97,6 @@ function recordRun(db, { run, findings, resolved_finding_ids }, _createdAt = Dat
     for (const p of run.scope_paths) {
       insertEdge.run(run.id, `scope:${p}`, 'covers');
     }
-
     for (const f of findings) {
       const findingData = { ...f, run_id: run.id, status: 'open' };
       insertNode.run(f.id, 'finding', JSON.stringify(findingData), now);
@@ -94,8 +107,7 @@ function recordRun(db, { run, findings, resolved_finding_ids }, _createdAt = Dat
     if (run.based_on) {
       insertEdge.run(run.id, run.based_on, 'based_on');
     }
-
-    for (const fid of (resolved_finding_ids || [])) {
+    for (const fid of (resolved_finding_ids ?? [])) {
       updateFindingStatus.run('resolved', fid);
       insertEdge.run(run.id, fid, 'resolved');
     }
@@ -107,18 +119,25 @@ function recordRun(db, { run, findings, resolved_finding_ids }, _createdAt = Dat
   }
 }
 
-/**
- * Compact overview: 5 most recent runs + open finding counts.
- */
-function querySummary(db, n = 5) {
+export interface SummaryResult {
+  recent_runs: Array<{
+    id: string; mode: string; status: string; created_at: string;
+    metrics: Record<string, number> & { coverage_pct: number };
+  }>;
+  open_findings: { total: number; blocking: number; by_scope: Record<string, number> };
+}
+
+export function querySummary(db: DatabaseSync, n = 5): SummaryResult {
   const runRows = db.prepare(
     "SELECT id, data, created_at FROM nodes WHERE kind = 'run' ORDER BY created_at DESC LIMIT ?"
-  ).all(n);
+  ).all(n) as unknown as NodeRow[];
 
   const recent_runs = runRows.map(row => {
-    const d = JSON.parse(row.data);
-    const m = d.metrics || {};
-    const pct = m.total_functions > 0 ? Math.round(m.covered_functions / m.total_functions * 100) : 0;
+    const d = JSON.parse(row.data) as Run & { metrics: Record<string, number> };
+    const m = d.metrics ?? {};
+    const total = m['total_functions'] ?? 0;
+    const covered = m['covered_functions'] ?? 0;
+    const pct = total > 0 ? Math.round(covered / total * 100) : 0;
     return {
       id: d.id,
       mode: d.mode,
@@ -130,43 +149,50 @@ function querySummary(db, n = 5) {
 
   const findingRows = db.prepare(
     "SELECT data FROM nodes WHERE kind = 'finding'"
-  ).all();
+  ).all() as Array<{ data: string }>;
 
   let total = 0, blocking = 0;
-  const by_scope = {};
+  const by_scope: Record<string, number> = {};
   for (const row of findingRows) {
-    const f = JSON.parse(row.data);
+    const f = JSON.parse(row.data) as Finding & { status: string };
     if (f.status !== 'open') continue;
     total++;
     if (f.severity === 'blocking') blocking++;
-    by_scope[f.scope_path] = (by_scope[f.scope_path] || 0) + 1;
+    by_scope[f.scope_path] = (by_scope[f.scope_path] ?? 0) + 1;
   }
 
   return { recent_runs, open_findings: { total, blocking, by_scope } };
 }
 
-/**
- * Finding history for a specific path.
- * Covered_by: runs whose scope_paths cover this path (prefix or exact match).
- */
-function queryScope(db, scopePath) {
+export interface ScopeResult {
+  scope: string;
+  covered_by: Array<{ run_id: string; created_at: string; status: string }>;
+  findings: Array<{
+    id: string; severity: string; kind: string; text: string;
+    status: string; found_in: string | null; created_at: string;
+  }>;
+}
+
+export function queryScope(db: DatabaseSync, scopePath: string): ScopeResult {
   const allRunEdges = db.prepare(
     "SELECT source, target FROM edges WHERE kind = 'covers'"
-  ).all();
-  const coveringRunIds = new Set();
+  ).all() as unknown as EdgeRow[];
+
+  const coveringRunIds = new Set<string>();
   for (const edge of allRunEdges) {
-    const scopeId = edge.target;
-    const scopeNodePath = scopeId.replace(/^scope:/, '');
+    const scopeNodePath = edge.target.replace(/^scope:/, '');
     if (scopePath === scopeNodePath || scopePath.startsWith(scopeNodePath)) {
       coveringRunIds.add(edge.source);
     }
   }
 
-  const covered_by = [];
+  const covered_by: ScopeResult['covered_by'] = [];
   for (const runId of coveringRunIds) {
-    const row = db.prepare("SELECT data, created_at FROM nodes WHERE id = ?").get(runId);
+    const row = db.prepare(
+      "SELECT data, created_at FROM nodes WHERE id = ?"
+    ).get(runId) as NodeRow | undefined;
     if (!row) continue;
-    const d = JSON.parse(row.data);
+    const d = JSON.parse(row.data) as { status: string };
     covered_by.push({
       run_id: runId,
       created_at: new Date(row.created_at).toISOString().slice(0, 10),
@@ -178,16 +204,18 @@ function queryScope(db, scopePath) {
   const scopeNodeId = `scope:${scopePath}`;
   const affectsEdges = db.prepare(
     "SELECT source FROM edges WHERE target = ? AND kind = 'affects'"
-  ).all(scopeNodeId);
+  ).all(scopeNodeId) as Array<{ source: string }>;
 
-  const findings = [];
+  const findings: ScopeResult['findings'] = [];
   for (const edge of affectsEdges) {
-    const fRow = db.prepare("SELECT data, created_at FROM nodes WHERE id = ?").get(edge.source);
+    const fRow = db.prepare(
+      "SELECT data, created_at FROM nodes WHERE id = ?"
+    ).get(edge.source) as NodeRow | undefined;
     if (!fRow) continue;
-    const f = JSON.parse(fRow.data);
+    const f = JSON.parse(fRow.data) as Finding & { status: string };
     const producedEdge = db.prepare(
       "SELECT source FROM edges WHERE target = ? AND kind = 'produced'"
-    ).get(edge.source);
+    ).get(edge.source) as EdgeRow | undefined;
     findings.push({
       id: f.id,
       severity: f.severity,
@@ -202,21 +230,25 @@ function queryScope(db, scopePath) {
   return { scope: scopePath, covered_by, findings };
 }
 
-/**
- * Most recent complete audit whose scope_paths cover all requested paths.
- * A run covers path P if any of its scope nodes' paths are P or an ancestor of P.
- */
-function queryBaseline(db, scopePaths) {
+export interface BaselineResult {
+  run_id: string;
+  created_at: string;
+  metrics: Record<string, number>;
+  report_path: string;
+}
+
+export function queryBaseline(db: DatabaseSync, scopePaths: string[]): BaselineResult | null {
   const auditRows = db.prepare(
     "SELECT id, data, created_at FROM nodes WHERE kind = 'run' AND json_extract(data, '$.mode') = 'audit' AND json_extract(data, '$.status') = 'complete' ORDER BY created_at DESC"
-  ).all();
+  ).all() as unknown as NodeRow[];
 
   const coversStmt = db.prepare(
     "SELECT target FROM edges WHERE source = ? AND kind = 'covers'"
   );
+
   for (const row of auditRows) {
-    const d = JSON.parse(row.data);
-    const coversEdges = coversStmt.all(d.id);
+    const d = JSON.parse(row.data) as Run;
+    const coversEdges = coversStmt.all(d.id) as Array<{ target: string }>;
     const coveredPaths = coversEdges.map(e => e.target.replace(/^scope:/, ''));
 
     const coversAll = scopePaths.every(requested =>
@@ -235,34 +267,41 @@ function queryBaseline(db, scopePaths) {
   return null;
 }
 
-/**
- * Full run detail: run node + all findings + scopes covered.
- */
-function queryRun(db, runId) {
-  const runRow = db.prepare("SELECT data FROM nodes WHERE id = ? AND kind = 'run'").get(runId);
+export interface RunResult {
+  run: Run;
+  findings: Array<Finding & { status: string; run_id: string; resolved_by: string | null }>;
+  scopes_covered: string[];
+}
+
+export function queryRun(db: DatabaseSync, runId: string): RunResult | null {
+  const runRow = db.prepare(
+    "SELECT data FROM nodes WHERE id = ? AND kind = 'run'"
+  ).get(runId) as { data: string } | undefined;
   if (!runRow) return null;
 
-  const run = JSON.parse(runRow.data);
+  const run = JSON.parse(runRow.data) as Run;
 
   const producedEdges = db.prepare(
     "SELECT target FROM edges WHERE source = ? AND kind = 'produced'"
-  ).all(runId);
-  const findings = producedEdges.map(edge => {
-    const fRow = db.prepare("SELECT data FROM nodes WHERE id = ?").get(edge.target);
-    if (!fRow) return null;
-    const f = JSON.parse(fRow.data);
+  ).all(runId) as Array<{ target: string }>;
+
+  const findings: RunResult['findings'] = [];
+  for (const edge of producedEdges) {
+    const fRow = db.prepare(
+      "SELECT data FROM nodes WHERE id = ?"
+    ).get(edge.target) as { data: string } | undefined;
+    if (!fRow) continue;
+    const f = JSON.parse(fRow.data) as Finding & { status: string; run_id: string };
     const resolvedEdge = db.prepare(
       "SELECT source FROM edges WHERE target = ? AND kind = 'resolved'"
-    ).get(f.id);
-    return { ...f, resolved_by: resolvedEdge ? resolvedEdge.source : null };
-  }).filter(Boolean);
+    ).get(f.id) as EdgeRow | undefined;
+    findings.push({ ...f, resolved_by: resolvedEdge ? resolvedEdge.source : null });
+  }
 
   const coversEdges = db.prepare(
     "SELECT target FROM edges WHERE source = ? AND kind = 'covers'"
-  ).all(runId);
+  ).all(runId) as Array<{ target: string }>;
   const scopes_covered = coversEdges.map(e => e.target.replace(/^scope:/, ''));
 
   return { run, findings, scopes_covered };
 }
-
-module.exports = { initDb, recordRun, querySummary, queryScope, queryBaseline, queryRun };
