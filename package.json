@@ -2,17 +2,27 @@
   "name": "clank",
   "version": "0.2.0",
   "description": "Test suite lifecycle management plugin for Claude Code",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "test": "node --test tests/clank-tools.test.cjs && node --test tests/db.test.cjs"
+    "build": "tsc -p tsconfig.json",
+    "pretest": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "oxlint src"
   },
   "bin": {
-    "clank-tools": "./bin/clank-tools.cjs",
-    "clank": "./bin/clank.cjs"
+    "clank-tools": "./dist/clank-tools.js",
+    "clank": "./dist/clank.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.10.2",
     "js-yaml": "4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "oxlint": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
   },
   "engines": {
     "node": ">=22.5.0"
