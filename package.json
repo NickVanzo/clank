@@ -1,18 +1,20 @@
 {
   "name": "clank",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Test suite lifecycle management plugin for Claude Code",
   "type": "commonjs",
   "scripts": {
-    "test": "node --test tests/clank-tools.test.cjs"
+    "test": "node --test tests/clank-tools.test.cjs && node --test tests/db.test.cjs"
   },
   "bin": {
-    "clank-tools": "./bin/clank-tools.cjs"
+    "clank-tools": "./bin/clank-tools.cjs",
+    "clank": "./bin/clank.cjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.10.2",
     "js-yaml": "4.1.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   }
 }
