@@ -20,8 +20,7 @@ Modern codebases accumulate test debt the same way they accumulate technical deb
 ## Installation
 
 ```bash
-npx clank
-# or: node bin/install.js  (from source)
+npm install -g /path/to/clank && clank
 ```
 
 The installer:
@@ -211,7 +210,7 @@ based_on: null
 **Querying reports:**
 
 ```bash
-node ~/.claude/clank/bin/clank-tools.cjs recent 5
+node ~/.claude/clank/dist/clank-tools.js recent 5
 ```
 
 Returns a JSON array of the 5 most recent reports with id, mode, status, scope, created_at, and a summary excerpt.
@@ -300,7 +299,7 @@ Clank's audit rules are drawn from seven books on software testing. The full cit
 
 ## Architecture
 
-Clank follows the GSD plugin architecture. Agent behavior lives in Markdown files; stateful operations (report IDs, stack detection, scratch management, config) go through `bin/clank-tools.cjs`.
+Clank follows the GSD plugin architecture. Agent behavior lives in Markdown files; stateful operations (report IDs, stack detection, scratch management, config) go through `dist/clank-tools.js`.
 
 ```
 commands/clank/     Entry points: /clank:audit, /clank:bootstrap, etc.
