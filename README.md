@@ -2,7 +2,7 @@
 
 Clank is a Claude Code plugin for managing the full lifecycle of a test suite. It audits coverage, generates tests for untested code, refactors messy suites, and watches for drift — all without ever touching production code.
 
-Every Clank operation produces a persistent Markdown report in `clank_reports/`. Nothing is changed without your explicit approval.
+Every Clank operation produces a persistent Markdown report in `clank_reports/` and records structured data to a local SQLite memory graph (`.clank/memory.db`). Nothing is changed without your explicit approval.
 
 ---
 
@@ -20,12 +20,18 @@ Modern codebases accumulate test debt the same way they accumulate technical deb
 ## Installation
 
 ```bash
-node bin/install.js
+npm install -g /path/to/clank && clank
 ```
 
-This copies Clank's commands, agents, and tools into your Claude Code configuration, registers a session-start hook, and initializes a `.clank/` state directory in your project.
+The installer:
+- Installs `clank` and `clank-tools` binaries globally via npm
+- Copies commands, agents, and tools into your Claude Code configuration
+- Registers the `clank` MCP server in `~/.claude.json` (or `.claude.json` for local installs)
+- Adds `clank_memory_*` tools to the auto-allow list in `settings.json`
+- Registers a `SessionStart` hook that prints a memory summary at session start
+- Initializes a `.clank/` state directory in your project (including `memory.db`)
 
-The installer places shared files in `~/.claude/clank/` so all projects on the same machine share one installation. Per-project version pinning is not supported in v0.1.
+The installer places shared files in `~/.claude/clank/` so all projects on the same machine share one installation. Per-project version pinning is not supported in v0.2.
 
 ---
 
@@ -204,7 +210,7 @@ based_on: null
 **Querying reports:**
 
 ```bash
-node ~/.claude/clank/bin/clank-tools.cjs recent 5
+node ~/.claude/clank/dist/clank-tools.js recent 5
 ```
 
 Returns a JSON array of the 5 most recent reports with id, mode, status, scope, created_at, and a summary excerpt.
@@ -237,6 +243,7 @@ Clank stores per-project state in `.clank/`:
 ```
 .clank/
 ├── config.json          # per-project settings
+├── memory.db            # SQLite memory graph (gitignored)
 ├── journals/
 │   └── refactor-{ID}.json   # execution state for refactor runs
 └── scratch/
@@ -258,7 +265,7 @@ Clank stores per-project state in `.clank/`:
 
 If your suite takes more than a few minutes to run, set `test_run_command` to a scoped runner (e.g. `vitest run --project api`). Refactor will use it in place of the default full-suite command.
 
-Add `.clank/scratch/` to your `.gitignore`. Commit `clank_reports/` and `.clank/config.json`.
+Add `.clank/scratch/` and `.clank/memory.db` to your `.gitignore`. Commit `clank_reports/` and `.clank/config.json`.
 
 ---
 
@@ -292,7 +299,7 @@ Clank's audit rules are drawn from seven books on software testing. The full cit
 
 ## Architecture
 
-Clank follows the GSD plugin architecture. Agent behavior lives in Markdown files; stateful operations (report IDs, stack detection, scratch management, config) go through `bin/clank-tools.cjs`.
+Clank follows the GSD plugin architecture. Agent behavior lives in Markdown files; stateful operations (report IDs, stack detection, scratch management, config) go through `dist/clank-tools.js`.
 
 ```
 commands/clank/     Entry points: /clank:audit, /clank:bootstrap, etc.
@@ -300,8 +307,8 @@ clank/workflows/    Full mode orchestration logic
 agents/             Specialized subagents with YAML frontmatter
 clank/references/   Shared knowledge consumed by all agents
 clank/templates/    Report templates agents fill in
-bin/                clank-tools.cjs (CLI), install.js
-hooks/              session-start hook
+src/                db.cjs — SQLite graph DB (initDb, recordRun, query functions)
+bin/                clank.cjs (MCP server), clank-tools.cjs (CLI), install.js
 ```
 
 Subagents communicate through scratch files (`.clank/scratch/{run-id}/{agent-index}.json`), not the agent API. The orchestrator merges scratch files after all subagents complete.

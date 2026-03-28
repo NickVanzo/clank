@@ -1,33 +1,33 @@
-'use strict';
+import { describe, test, expect } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { initDb, recordRun } from './db.js';
 
-const { test, describe } = require('node:test');
-const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const TOOL = path.join(__dirname, '..', 'dist', 'clank-tools.js');
 
-const TOOL = path.join(__dirname, '..', 'bin', 'clank-tools.cjs');
-
-function tmpProject() {
+function tmpProject(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clank-test-'));
   fs.mkdirSync(path.join(dir, '.clank'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'clank_reports'), { recursive: true });
   return dir;
 }
 
-function run(projectRoot, ...args) {
+function run(projectRoot: string, ...args: string[]): string {
   const result = spawnSync('node', [TOOL, ...args], {
     encoding: 'utf8',
     env: { ...process.env, CLANK_PROJECT_ROOT: projectRoot },
   });
   if (result.status !== 0) {
-    throw new Error(result.stderr || (result.error && result.error.message) || 'command failed');
+    throw new Error(result.stderr || result.error?.message || 'command failed');
   }
   return result.stdout.trim();
 }
 
-function runJSON(projectRoot, ...args) {
+function runJSON(projectRoot: string, ...args: string[]): unknown {
   return JSON.parse(run(projectRoot, ...args));
 }
 
@@ -35,15 +35,15 @@ describe('report-id', () => {
   test('produces id matching format {mode}-YYYYMMDD-HHmmss-NNN', () => {
     const dir = tmpProject();
     const id = run(dir, 'report-id', 'audit');
-    assert.match(id, /^audit-\d{8}-\d{6}-\d{3}$/);
+    expect(id).toMatch(/^audit-\d{8}-\d{6}-\d{3}$/);
     fs.rmSync(dir, { recursive: true });
   });
 
   test('uses mode prefix correctly', () => {
     const dir = tmpProject();
-    assert.match(run(dir, 'report-id', 'bootstrap'), /^bootstrap-/);
-    assert.match(run(dir, 'report-id', 'refactor'), /^refactor-/);
-    assert.match(run(dir, 'report-id', 'watch'), /^watch-/);
+    expect(run(dir, 'report-id', 'bootstrap')).toMatch(/^bootstrap-/);
+    expect(run(dir, 'report-id', 'refactor')).toMatch(/^refactor-/);
+    expect(run(dir, 'report-id', 'watch')).toMatch(/^watch-/);
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -54,14 +54,13 @@ describe('report-id', () => {
     const id2 = run(dir, 'report-id', 'audit');
     const c1 = parseInt(id1.slice(-3), 10);
     const c2 = parseInt(id2.slice(-3), 10);
-    assert.equal(c2, c1 + 1);
+    expect(c2).toBe(c1 + 1);
     fs.rmSync(dir, { recursive: true });
   });
 
   test('starts counter at 001 when no prior reports', () => {
     const dir = tmpProject();
-    const id = run(dir, 'report-id', 'audit');
-    assert.ok(id.endsWith('-001'));
+    expect(run(dir, 'report-id', 'audit')).toMatch(/-001$/);
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -72,7 +71,7 @@ describe('validate', () => {
     const p = path.join(dir, 'clank_reports', 'audit-20260320-143022-001.md');
     fs.writeFileSync(p,
       '---\nid: audit-20260320-143022-001\nmode: audit\nstatus: complete\ncreated_at: 2026-03-20T14:30:22Z\n---\n\n# Report\n');
-    assert.deepEqual(runJSON(dir, 'validate', p), { valid: true });
+    expect(runJSON(dir, 'validate', p)).toEqual({ valid: true });
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -80,9 +79,9 @@ describe('validate', () => {
     const dir = tmpProject();
     const p = path.join(dir, 'clank_reports', 'bad.md');
     fs.writeFileSync(p, '# No frontmatter');
-    const result = runJSON(dir, 'validate', p);
-    assert.equal(result.valid, false);
-    assert.ok(result.error);
+    const result = runJSON(dir, 'validate', p) as { valid: boolean; error: string };
+    expect(result.valid).toBe(false);
+    expect(result.error).toBeTruthy();
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -90,16 +89,15 @@ describe('validate', () => {
     const dir = tmpProject();
     const p = path.join(dir, 'clank_reports', 'partial.md');
     fs.writeFileSync(p, '---\nid: x\nmode: audit\n---\n');
-    const result = runJSON(dir, 'validate', p);
-    assert.equal(result.valid, false);
-    assert.match(result.error, /missing/i);
+    const result = runJSON(dir, 'validate', p) as { valid: boolean; error: string };
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/missing/i);
     fs.rmSync(dir, { recursive: true });
   });
 
   test('returns valid:false for non-existent file', () => {
     const dir = tmpProject();
-    const result = runJSON(dir, 'validate', '/no/such/file.md');
-    assert.equal(result.valid, false);
+    expect((runJSON(dir, 'validate', '/no/such/file.md') as { valid: boolean }).valid).toBe(false);
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -107,21 +105,21 @@ describe('validate', () => {
 describe('recent', () => {
   test('returns empty array when clank_reports/ is empty', () => {
     const dir = tmpProject();
-    assert.deepEqual(runJSON(dir, 'recent', '5'), []);
+    expect(runJSON(dir, 'recent', '5')).toEqual([]);
     fs.rmSync(dir, { recursive: true });
   });
 
   test('returns reports sorted newest first', () => {
     const dir = tmpProject();
-    const write = (id, date) => fs.writeFileSync(
+    const write = (id: string, date: string) => fs.writeFileSync(
       path.join(dir, 'clank_reports', `${id}.md`),
       `---\nid: ${id}\nmode: audit\nstatus: complete\ncreated_at: ${date}\n---\n`
     );
     write('audit-20260319-100000-001', '2026-03-19T10:00:00Z');
     write('audit-20260320-100000-001', '2026-03-20T10:00:00Z');
-    const result = runJSON(dir, 'recent', '5');
-    assert.equal(result[0].id, 'audit-20260320-100000-001');
-    assert.equal(result[1].id, 'audit-20260319-100000-001');
+    const result = runJSON(dir, 'recent', '5') as Array<{ id: string }>;
+    expect(result[0]?.id).toBe('audit-20260320-100000-001');
+    expect(result[1]?.id).toBe('audit-20260319-100000-001');
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -133,14 +131,14 @@ describe('recent', () => {
         `---\nid: audit-2026032${i}-100000-001\nmode: audit\nstatus: complete\ncreated_at: 2026-03-2${i}T10:00:00Z\n---\n`
       );
     }
-    assert.equal(runJSON(dir, 'recent', '2').length, 2);
+    expect((runJSON(dir, 'recent', '2') as unknown[]).length).toBe(2);
     fs.rmSync(dir, { recursive: true });
   });
 
   test('skips corrupt reports silently', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'clank_reports', 'corrupt.md'), 'no frontmatter here');
-    assert.deepEqual(runJSON(dir, 'recent', '5'), []);
+    expect(runJSON(dir, 'recent', '5')).toEqual([]);
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -150,11 +148,11 @@ describe('recent', () => {
       path.join(dir, 'clank_reports', 'audit-20260320-100000-001.md'),
       '---\nid: audit-20260320-100000-001\nmode: audit\nstatus: complete\ncreated_at: 2026-03-20T10:00:00Z\n---\n'
     );
-    const result = runJSON(dir, 'recent', '1');
-    assert.ok('id' in result[0]);
-    assert.ok('mode' in result[0]);
-    assert.ok('status' in result[0]);
-    assert.ok('created_at' in result[0]);
+    const result = runJSON(dir, 'recent', '1') as Array<Record<string, unknown>>;
+    expect('id' in (result[0] ?? {})).toBe(true);
+    expect('mode' in (result[0] ?? {})).toBe(true);
+    expect('status' in (result[0] ?? {})).toBe(true);
+    expect('created_at' in (result[0] ?? {})).toBe(true);
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -164,9 +162,9 @@ describe('detect-stack', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'package.json'),
       JSON.stringify({ devDependencies: { vitest: '1.0.0', typescript: '5.0.0' } }));
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'typescript');
-    assert.equal(r.test_runner, 'vitest');
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string; test_runner: string };
+    expect(r.language).toBe('typescript');
+    expect(r.test_runner).toBe('vitest');
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -174,43 +172,43 @@ describe('detect-stack', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'package.json'),
       JSON.stringify({ devDependencies: { jest: '29.0.0' } }));
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'javascript');
-    assert.equal(r.test_runner, 'jest');
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string; test_runner: string };
+    expect(r.language).toBe('javascript');
+    expect(r.test_runner).toBe('jest');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('detects python/pytest from pyproject.toml', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[build-system]\n');
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'python');
-    assert.equal(r.test_runner, 'pytest');
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string; test_runner: string };
+    expect(r.language).toBe('python');
+    expect(r.test_runner).toBe('pytest');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('detects rust/cargo-test', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[package]\nname = "foo"\n');
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'rust');
-    assert.equal(r.test_runner, 'cargo-test');
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string; test_runner: string };
+    expect(r.language).toBe('rust');
+    expect(r.test_runner).toBe('cargo-test');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('detects go/go-test', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/foo\n');
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'go');
-    assert.equal(r.test_runner, 'go-test');
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string; test_runner: string };
+    expect(r.language).toBe('go');
+    expect(r.test_runner).toBe('go-test');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('returns unknown for project with no manifest', () => {
     const dir = tmpProject();
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'unknown');
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string };
+    expect(r.language).toBe('unknown');
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -218,9 +216,9 @@ describe('detect-stack', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'package.json'),
       JSON.stringify({ devDependencies: { typescript: '5.0.0' } }));
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.equal(r.language, 'typescript');
-    assert.equal(r.test_runner, null);
+    const r = runJSON(dir, 'detect-stack', dir) as { language: string; test_runner: string | null };
+    expect(r.language).toBe('typescript');
+    expect(r.test_runner).toBeNull();
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -229,17 +227,17 @@ describe('detect-stack', () => {
     fs.mkdirSync(path.join(dir, 'src', 'utils'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'package.json'),
       JSON.stringify({ devDependencies: { jest: '29.0.0' } }));
-    const r = runJSON(dir, 'detect-stack', path.join(dir, 'src', 'utils'));
-    assert.equal(r.test_runner, 'jest');
+    const r = runJSON(dir, 'detect-stack', path.join(dir, 'src', 'utils')) as { test_runner: string };
+    expect(r.test_runner).toBe('jest');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('returns manifest_path', () => {
     const dir = tmpProject();
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: {} }));
-    const r = runJSON(dir, 'detect-stack', dir);
-    assert.ok(r.manifest_path);
-    assert.ok(r.manifest_path.endsWith('package.json'));
+    const r = runJSON(dir, 'detect-stack', dir) as { manifest_path: string };
+    expect(r.manifest_path).toBeTruthy();
+    expect(r.manifest_path.endsWith('package.json')).toBe(true);
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -247,14 +245,14 @@ describe('detect-stack', () => {
 describe('codegraph-present', () => {
   test('returns false when .codegraph/ absent', () => {
     const dir = tmpProject();
-    assert.equal(run(dir, 'codegraph-present'), 'false');
+    expect(run(dir, 'codegraph-present')).toBe('false');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('returns true when .codegraph/ exists', () => {
     const dir = tmpProject();
     fs.mkdirSync(path.join(dir, '.codegraph'));
-    assert.equal(run(dir, 'codegraph-present'), 'true');
+    expect(run(dir, 'codegraph-present')).toBe('true');
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -262,18 +260,18 @@ describe('codegraph-present', () => {
 describe('codegraph-fresh', () => {
   test('returns fresh:false when .codegraph/ absent', () => {
     const dir = tmpProject();
-    const r = runJSON(dir, 'codegraph-fresh');
-    assert.equal(r.fresh, false);
-    assert.equal(r.last_built, null);
+    const r = runJSON(dir, 'codegraph-fresh') as { fresh: boolean; last_built: null };
+    expect(r.fresh).toBe(false);
+    expect(r.last_built).toBeNull();
     fs.rmSync(dir, { recursive: true });
   });
 
   test('returns last_built timestamp when .codegraph/ exists', () => {
     const dir = tmpProject();
     fs.mkdirSync(path.join(dir, '.codegraph'));
-    const r = runJSON(dir, 'codegraph-fresh');
-    assert.ok(r.last_built);
-    assert.ok(typeof r.commits_since === 'number');
+    const r = runJSON(dir, 'codegraph-fresh') as { last_built: string; commits_since: number };
+    expect(r.last_built).toBeTruthy();
+    expect(typeof r.commits_since).toBe('number');
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -282,8 +280,8 @@ describe('scratch management', () => {
   test('scratch-init creates directory and returns path', () => {
     const dir = tmpProject();
     const result = run(dir, 'scratch-init', 'run-001');
-    assert.ok(fs.existsSync(result));
-    assert.ok(result.includes('run-001'));
+    expect(fs.existsSync(result)).toBe(true);
+    expect(result).toContain('run-001');
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -294,9 +292,9 @@ describe('scratch management', () => {
       JSON.stringify({ agent_index: 0, status: 'complete', findings: [{ type: 'gap', file: 'a.ts' }], error: null }));
     fs.writeFileSync(path.join(scratchDir, '1.json'),
       JSON.stringify({ agent_index: 1, status: 'complete', findings: [{ type: 'gap', file: 'b.ts' }], error: null }));
-    const r = runJSON(dir, 'scratch-merge', 'run-merge');
-    assert.equal(r.findings.length, 2);
-    assert.equal(r.errors.length, 0);
+    const r = runJSON(dir, 'scratch-merge', 'run-merge') as { findings: unknown[]; errors: unknown[] };
+    expect(r.findings).toHaveLength(2);
+    expect(r.errors).toHaveLength(0);
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -305,32 +303,30 @@ describe('scratch management', () => {
     const scratchDir = run(dir, 'scratch-init', 'run-err');
     fs.writeFileSync(path.join(scratchDir, '0.json'),
       JSON.stringify({ agent_index: 0, status: 'error', findings: [], error: 'CodeGraph unavailable' }));
-    const r = runJSON(dir, 'scratch-merge', 'run-err');
-    assert.equal(r.errors.length, 1);
-    assert.equal(r.errors[0].error, 'CodeGraph unavailable');
+    const r = runJSON(dir, 'scratch-merge', 'run-err') as { errors: Array<{ error: string }> };
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]?.error).toBe('CodeGraph unavailable');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('scratch-merge returns empty for non-existent run', () => {
     const dir = tmpProject();
-    const r = runJSON(dir, 'scratch-merge', 'no-such-run');
-    assert.deepEqual(r, { findings: [], errors: [] });
+    expect(runJSON(dir, 'scratch-merge', 'no-such-run')).toEqual({ findings: [], errors: [] });
     fs.rmSync(dir, { recursive: true });
   });
 
   test('scratch-clean removes directory', () => {
     const dir = tmpProject();
     const scratchDir = run(dir, 'scratch-init', 'run-clean');
-    assert.ok(fs.existsSync(scratchDir));
+    expect(fs.existsSync(scratchDir)).toBe(true);
     run(dir, 'scratch-clean', 'run-clean');
-    assert.ok(!fs.existsSync(scratchDir));
+    expect(fs.existsSync(scratchDir)).toBe(false);
     fs.rmSync(dir, { recursive: true });
   });
 
   test('scratch-clean is idempotent', () => {
     const dir = tmpProject();
     run(dir, 'scratch-clean', 'non-existent');
-    // No error thrown
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -338,7 +334,7 @@ describe('scratch management', () => {
 describe('config management', () => {
   test('config-get returns null string for missing key', () => {
     const dir = tmpProject();
-    assert.equal(run(dir, 'config-get', 'missing_key'), 'null');
+    expect(run(dir, 'config-get', 'missing_key')).toBe('null');
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -346,21 +342,21 @@ describe('config management', () => {
     const dir = tmpProject();
     fs.rmSync(path.join(dir, '.clank'), { recursive: true });
     fs.mkdirSync(path.join(dir, '.clank'));
-    assert.equal(run(dir, 'config-get', 'anything'), 'null');
+    expect(run(dir, 'config-get', 'anything')).toBe('null');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('config-set and config-get roundtrip boolean', () => {
     const dir = tmpProject();
     run(dir, 'config-set', 'codegraph_suggestion_shown', 'true');
-    assert.equal(run(dir, 'config-get', 'codegraph_suggestion_shown'), 'true');
+    expect(run(dir, 'config-get', 'codegraph_suggestion_shown')).toBe('true');
     fs.rmSync(dir, { recursive: true });
   });
 
   test('config-set and config-get roundtrip string', () => {
     const dir = tmpProject();
     run(dir, 'config-set', 'last_audit', '"audit-20260320-001"');
-    assert.equal(run(dir, 'config-get', 'last_audit'), '"audit-20260320-001"');
+    expect(run(dir, 'config-get', 'last_audit')).toBe('"audit-20260320-001"');
     fs.rmSync(dir, { recursive: true });
   });
 
@@ -368,8 +364,44 @@ describe('config management', () => {
     const dir = tmpProject();
     run(dir, 'config-set', 'key_a', '"a"');
     run(dir, 'config-set', 'key_b', '"b"');
-    assert.equal(run(dir, 'config-get', 'key_a'), '"a"');
-    assert.equal(run(dir, 'config-get', 'key_b'), '"b"');
+    expect(run(dir, 'config-get', 'key_a')).toBe('"a"');
+    expect(run(dir, 'config-get', 'key_b')).toBe('"b"');
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('memory-summary', () => {
+  test('returns empty state when memory.db does not exist (falls back to .md scan)', () => {
+    const dir = tmpProject();
+    const result = runJSON(dir, 'memory-summary') as { recent_runs: unknown[]; open_findings: { total: number } };
+    expect(Array.isArray(result.recent_runs)).toBe(true);
+    expect(result.open_findings.total).toBe(0);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  test('returns summary from memory.db when it exists', () => {
+    const dir = tmpProject();
+    const db = initDb(dir);
+    recordRun(db, {
+      run: {
+        id: 'audit-20260320-100000-001',
+        mode: 'audit',
+        status: 'complete',
+        scope_type: 'directory',
+        scope_paths: ['src/'],
+        stack: 'typescript/vitest',
+        metrics: { files: 5, covered_functions: 10, total_functions: 12 },
+        report_path: 'clank_reports/audit-20260320-100000-001.md',
+        based_on: null,
+      },
+      findings: [],
+      resolved_finding_ids: [],
+    });
+    db.close();
+
+    const result = runJSON(dir, 'memory-summary') as { recent_runs: Array<{ id: string }> };
+    expect(result.recent_runs).toHaveLength(1);
+    expect(result.recent_runs[0]?.id).toBe('audit-20260320-100000-001');
     fs.rmSync(dir, { recursive: true });
   });
 });
